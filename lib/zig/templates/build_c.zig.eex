@@ -2,11 +2,11 @@
 
 <%= for dir <- @include_dirs do %>
   <%= case dir do %>
-    <% {:system, path} -> %> <%= name %>.addSystemIncludePath(.{.cwd_relative = "<%= path %>"});
-    <% _ -> %> <%= name %>.addIncludePath(.{.cwd_relative = "<%= dir %>"});
+    <% {:system, path} -> %> <%= name %>.addSystemIncludePath(<%= if Path.type(path) == :absolute, do: ".{ .cwd_relative = \"#{path}\" }", else: "b.path(\"#{path}\")" %>);
+    <% _ -> %> <%= name %>.addIncludePath(<%= if Path.type(dir) == :absolute, do: ".{ .cwd_relative = \"#{dir}\" }", else: "b.path(\"#{dir}\")" %>);
   <% end %>
 <% end %>
 
 <%= for dir <- @library_dirs do %>
-<%= name %>.addLibraryPath(.{.cwd_relative = "<%= dir %>"});
+<%= name %>.addLibraryPath(<%= if Path.type(dir) == :absolute, do: ".{ .cwd_relative = \"#{dir}\" }", else: "b.path(\"#{dir}\")" %>);
 <% end %>

@@ -1,5 +1,5 @@
 defmodule ZiglerTest.MakeGuides do
-  defstruct lines: [], on: false, needs_module: true, top: []
+  defstruct lines: [], on: false, needs_module: true, has_use_zig: false, top: []
 
   def go do
     File.mkdir_p!("test/guides")
@@ -7,6 +7,9 @@ defmodule ZiglerTest.MakeGuides do
     "guides"
     |> File.ls!()
     |> Enum.each(fn
+      "06-c_integration.md" ->
+        :ok
+
       "11-precompiled.md" ->
         :ok
 
@@ -43,7 +46,8 @@ defmodule ZiglerTest.MakeGuides do
     if String.trim(line) == "```" do
       %{acc | on: false}
     else
-      %{acc | lines: [line | acc.lines], needs_module: !(line =~ "defmodule") && acc.needs_module}
+      has_use_zig = acc.has_use_zig || String.contains?(line, "use Zig")
+      %{acc | lines: [line | acc.lines], needs_module: !(line =~ "defmodule") && acc.needs_module, has_use_zig: has_use_zig}
     end
   end
 
@@ -53,11 +57,18 @@ defmodule ZiglerTest.MakeGuides do
     Enum.reverse(lines, tail)
   end
 
-  defp prepare(%{lines: lines, needs_module: module}) do
-    [header(module) | Enum.reverse(lines, ["end\n"])]
+  defp prepare(%{lines: lines, needs_module: module, has_use_zig: has_use_zig}) do
+    [header(module, has_use_zig) | Enum.reverse(lines, ["end\n"])]
   end
 
-  defp header(module) do
+  defp header(module, true) do
+    """
+    defmodule #{module} do
+      use ExUnit.Case
+    """
+  end
+
+  defp header(module, false) do
     """
     defmodule #{module} do
       use ExUnit.Case

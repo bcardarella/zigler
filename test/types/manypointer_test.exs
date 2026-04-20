@@ -94,6 +94,10 @@ defmodule ZiglerTest.Types.ManypointerTest do
       return passed[3];
   }
 
+  pub fn sentinel_terminated_u16_test(passed: [*:0]u16) u16 {
+      return passed[3];
+  }
+
   var stbr_result = [_]u8{ 'b', 'a', 'r', 0 };
 
   pub fn sentinel_terminated_binary_return_test() [*:0]u8 {
@@ -108,6 +112,10 @@ defmodule ZiglerTest.Types.ManypointerTest do
   describe "sentinel terminated arrays" do
     test "are supported" do
       assert 0 == sentinel_terminated_test("foo")
+    end
+
+    test "list-backed sentinels are allocated with room for the terminator" do
+      assert 0 == sentinel_terminated_u16_test([1, 2, 3])
     end
 
     test "can be returned as binary" do

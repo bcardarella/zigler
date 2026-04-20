@@ -1334,7 +1334,7 @@ pub const Payload = payload.Payload;
 ///     const slice = try beam.get([]i32, term, .{.allocator = allocator});
 ///     const number = slice[0];
 ///     beam.cleanup(slice, .{.allocator = allocator});
-///     if (gpa.detectLeaks()) return error.leaked;
+///     if (gpa.detectLeaks() != 0) return error.leaked;
 ///     return number + 1;
 /// }
 /// """

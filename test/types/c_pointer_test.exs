@@ -34,7 +34,7 @@ defmodule ZiglerTest.Types.CPointerTest do
 
     test "you can't pass a keyword list" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: map | list(map | keyword | <<_::32>>) | <<_::_*32>> (for `[*c]TestStruct`)\n     got: `[value: 47]`\n     at index 0:\n     | expected: map | keyword | <<_::32>> (for `TestStruct`)\n     | got: `{:value, 47}`\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: map | list(map | keyword | <<_::32>>) | <<_::_*32>> (for `[*c]nif.TestStruct`)\n     got: `[value: 47]`\n     at index 0:\n     | expected: map | keyword | <<_::32>> (for `nif.TestStruct`)\n     | got: `{:value, 47}`\n",
                    fn ->
                      cpointer_test(value: 47)
                    end
@@ -42,7 +42,7 @@ defmodule ZiglerTest.Types.CPointerTest do
 
     test "you can't pass some other term" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: map | list(map | keyword | <<_::32>>) | <<_::_*32>> (for `[*c]TestStruct`)\n     got: `:foo`\n     note: [*c]TestStruct can take the atom `nil` but no other atom\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: map | list(map | keyword | <<_::32>>) | <<_::_*32>> (for `[*c]nif.TestStruct`)\n     got: `:foo`\n     note: [*c]nif.TestStruct can take the atom `nil` but no other atom\n",
                    fn ->
                      cpointer_test(:foo)
                    end
@@ -50,7 +50,7 @@ defmodule ZiglerTest.Types.CPointerTest do
 
     test "you can't pass a bad value term" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: map | list(map | keyword | <<_::32>>) | <<_::_*32>> (for `[*c]TestStruct`)\n     got: `%{value: :foo}`\n     in field `:value`:\n     | expected: integer (for `i32`)\n     | got: `:foo`\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: map | list(map | keyword | <<_::32>>) | <<_::_*32>> (for `[*c]nif.TestStruct`)\n     got: `%{value: :foo}`\n     in field `:value`:\n     | expected: integer (for `i32`)\n     | got: `:foo`\n",
                    fn ->
                      cpointer_test(%{value: :foo})
                    end

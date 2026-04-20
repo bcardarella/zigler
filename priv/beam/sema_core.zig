@@ -1,0 +1,315 @@
+const std = @import("std");
+const json = std.json;
+
+fn streamInt(stream: anytype, comptime i: std.builtin.Type.Int) anyerror!void {
+    try typeHeader(stream, "integer");
+    try stream.objectField("signedness");
+    switch (i.signedness) {
+        .unsigned => try stream.write("unsigned"),
+        .signed => try stream.write("signed"),
+    }
+    try stream.objectField("bits");
+    try stream.write(i.bits);
+}
+
+fn streamEnum(stream: anytype, comptime en: std.builtin.Type.Enum, comptime T: type) anyerror!void {
+    if (en.fields.len <= 1) {
+        try typeHeader(stream, "unusable:" ++ @typeName(T));
+        return;
+    }
+
+    try typeHeader(stream, "enum");
+    try stream.objectField("name");
+    try stream.write(@typeName(T));
+    try stream.objectField("tags");
+    try stream.beginObject();
+    inline for (en.fields) |field| {
+        try stream.objectField(field.name);
+        try stream.write(field.value);
+    }
+    try stream.endObject();
+}
+
+fn streamFloat(stream: anytype, comptime f: std.builtin.Type.Float) anyerror!void {
+    try typeHeader(stream, "float");
+    try stream.objectField("bits");
+    try stream.write(f.bits);
+}
+
+fn streamStruct(stream: anytype, comptime s: std.builtin.Type.Struct, comptime S: type, comptime special_types: anytype) anyerror!void {
+    const name = @typeName(S);
+    if (@hasDecl(S, "__is_zigler_resource")) {
+        try typeHeader(stream, "resource");
+        try stream.objectField("name");
+        try stream.write(name);
+    } else {
+        try typeHeader(stream, "struct");
+        try stream.objectField("name");
+        try stream.write(name);
+        switch (s.layout) {
+            .@"packed" => {
+                try stream.objectField("packed_size");
+                try stream.write(@bitSizeOf(S));
+            },
+            .@"extern" => {
+                try stream.objectField("extern_size");
+                try stream.write(@bitSizeOf(S));
+            },
+            .auto => {},
+        }
+        try stream.objectField("fields");
+        try stream.beginArray();
+        inline for (s.fields) |field| {
+            try stream.beginObject();
+            try stream.objectField("name");
+            try stream.write(field.name);
+            try stream.objectField("type");
+            try streamType(stream, field.type, special_types);
+            try stream.objectField("required");
+            if (field.default_value_ptr) |default_value| {
+                _ = default_value;
+                try stream.write(false);
+            } else {
+                try stream.write(true);
+            }
+            try stream.objectField("alignment");
+            try stream.write(field.alignment);
+            try stream.endObject();
+        }
+        try stream.endArray();
+    }
+}
+
+fn streamArray(stream: anytype, comptime a: std.builtin.Type.Array, repr: anytype, comptime special_types: anytype) anyerror!void {
+    try typeHeader(stream, "array");
+    try stream.objectField("len");
+    try stream.write(a.len);
+    try stream.objectField("child");
+    try streamType(stream, a.child, special_types);
+    try stream.objectField("has_sentinel");
+    try stream.write(if (a.sentinel_ptr) |_| true else false);
+    try stream.objectField("repr");
+    try stream.write(repr);
+}
+
+fn streamPointer(stream: anytype, comptime p: std.builtin.Type.Pointer, repr: anytype, comptime special_types: anytype) anyerror!void {
+    switch (p.size) {
+        .one => {
+            try typeHeader(stream, "pointer");
+        },
+        .many => {
+            try typeHeader(stream, "manypointer");
+            try stream.objectField("has_sentinel");
+            try stream.write(if (p.sentinel_ptr) |_| true else false);
+            try stream.objectField("repr");
+            try stream.write(repr);
+        },
+        .slice => {
+            try typeHeader(stream, "slice");
+            try stream.objectField("has_sentinel");
+            try stream.write(if (p.sentinel_ptr) |_| true else false);
+            try stream.objectField("repr");
+            try stream.write(repr);
+        },
+        .c => {
+            try typeHeader(stream, "cpointer");
+        },
+    }
+    try stream.objectField("is_const");
+    try stream.write(p.is_const);
+    try stream.objectField("alignment");
+    try stream.write(p.alignment);
+    try stream.objectField("is_allowzero");
+    try stream.write(p.is_allowzero);
+    try stream.objectField("child");
+    try streamType(stream, p.child, special_types);
+}
+
+fn streamOptional(stream: anytype, comptime o: std.builtin.Type.Optional, comptime special_types: anytype) anyerror!void {
+    try typeHeader(stream, "optional");
+    try stream.objectField("child");
+    try streamType(stream, o.child, special_types);
+}
+
+fn typeHeader(stream: anytype, name: []const u8) anyerror!void {
+    try stream.objectField("type");
+    try stream.write(name);
+}
+
+fn typematches(comptime T: type, comptime name: []const u8) bool {
+    const typename = @typeName(T);
+    if (typename.len < name.len) return false;
+    for (name, 0..) |c, i| {
+        if (typename[i] != c) return false;
+    }
+    return true;
+}
+
+const typemapping = .{
+    .{ .match = "beam.term__struct_", .name = "term" },
+    .{ .match = "stub_erl_nif.ERL_NIF_TERM", .name = "erl_nif_term" },
+    .{ .match = "stub_erl_nif.ErlNifEvent", .name = "e.ErlNifEvent" },
+    .{ .match = "stub_erl_nif.ErlNifBinary", .name = "e.ErlNifBinary" },
+    .{ .match = "stub_erl_nif.ErlNifPid", .name = "pid" },
+    .{ .match = "?*stub_erl_nif.ErlNifEnv", .name = "env" },
+};
+
+fn streamType(stream: anytype, comptime T: type, comptime special_types: anytype) anyerror!void {
+    try stream.beginObject();
+
+    inline for (special_types) |entry| {
+        if (entry.enabled and T == entry.type) {
+            try typeHeader(stream, entry.name);
+            try stream.endObject();
+            return;
+        }
+    }
+
+    inline for (typemapping) |m| {
+        if (typematches(T, m.match)) {
+            try typeHeader(stream, m.name);
+            try stream.endObject();
+            return;
+        }
+    }
+
+    switch (T) {
+        std.builtin.StackTrace => {
+            try typeHeader(stream, "builtin.StackTrace");
+        },
+        else => {
+            switch (@typeInfo(T)) {
+                .int => |i| try streamInt(stream, i),
+                .@"enum" => |en| try streamEnum(stream, en, T),
+                .float => |f| try streamFloat(stream, f),
+                .@"struct" => |s| try streamStruct(stream, s, T, special_types),
+                .array => |a| try streamArray(stream, a, std.fmt.comptimePrint("{}", .{T}), special_types),
+                .pointer => |p| try streamPointer(stream, p, std.fmt.comptimePrint("{}", .{T}), special_types),
+                .optional => |o| try streamOptional(stream, o, special_types),
+                .bool => try typeHeader(stream, "bool"),
+                .void => try typeHeader(stream, "void"),
+                .error_union => |eu| {
+                    try typeHeader(stream, "error");
+                    try stream.objectField("child");
+                    try streamType(stream, eu.payload, special_types);
+                },
+                else => {
+                    try typeHeader(stream, "unusable:" ++ @typeName(T));
+                },
+            }
+        },
+    }
+    try stream.endObject();
+}
+
+pub fn streamFun(stream: anytype, comptime name: anytype, comptime fun: std.builtin.Type.Fn, comptime special_types: anytype) anyerror!void {
+    try stream.beginObject();
+    try stream.objectField("name");
+    try stream.write(name);
+    try stream.objectField("return");
+    if (fun.return_type) |return_type| {
+        try streamType(stream, return_type, special_types);
+    } else {
+        try stream.write(null);
+    }
+    try stream.objectField("params");
+    try stream.beginArray();
+    inline for (fun.params) |param| {
+        if (param.type) |T| {
+            try streamType(stream, T, special_types);
+        } else {
+            try stream.write(null);
+        }
+    }
+    try stream.endArray();
+    try stream.endObject();
+}
+
+fn maybeStreamStub(stream: anytype, comptime name: []const u8, comptime stub_functions: anytype) anyerror!bool {
+    inline for (stub_functions) |stub| {
+        if (std.mem.eql(u8, stub.name, name)) {
+            try stub.stream(stream);
+            return true;
+        }
+    }
+    return false;
+}
+
+pub fn streamModule(stream: anytype, comptime Mod: type, comptime stub_functions: anytype, comptime special_types: anytype) anyerror!void {
+    const mod_info = @typeInfo(Mod).@"struct";
+    try stream.beginObject();
+    try stream.objectField("functions");
+    try stream.beginArray();
+    inline for (mod_info.decls) |decl| {
+        const decl_info = @typeInfo(@TypeOf(@field(Mod, decl.name)));
+        const is_stubbed = try maybeStreamStub(stream, decl.name, stub_functions);
+        if (!is_stubbed and .@"fn" == decl_info) {
+            try streamFun(stream, decl.name, decl_info.@"fn", special_types);
+        }
+    }
+    try stream.endArray();
+
+    try stream.objectField("types");
+    try stream.beginArray();
+    inline for (mod_info.decls) |decl| {
+        switch (@typeInfo(@TypeOf(@field(Mod, decl.name)))) {
+            .type => {
+                const T = @field(Mod, decl.name);
+                try stream.beginObject();
+                try stream.objectField("name");
+                try stream.write(decl.name);
+                try stream.objectField("type");
+                try streamType(stream, T, special_types);
+                try stream.endObject();
+            },
+            else => {},
+        }
+    }
+    try stream.endArray();
+
+    try stream.objectField("decls");
+    try stream.beginArray();
+    inline for (mod_info.decls) |decl| {
+        switch (@typeInfo(@TypeOf(@field(Mod, decl.name)))) {
+            .type => {},
+            .@"fn" => {},
+            else => {
+                try stream.beginObject();
+                try stream.objectField("name");
+                try stream.write(decl.name);
+                try stream.objectField("type");
+                try stream.write(@typeName(@TypeOf(@field(Mod, decl.name))));
+                try stream.endObject();
+            },
+        }
+    }
+    try stream.endArray();
+    try stream.endObject();
+}
+
+fn streamToWriter(writer: anytype, comptime Mod: type, comptime stub_functions: anytype, comptime special_types: anytype) anyerror!void {
+    var stream: json.Stringify = .{ .writer = writer };
+    try streamModule(&stream, Mod, stub_functions, special_types);
+}
+
+pub fn main(init: std.process.Init, comptime Mod: type, comptime stub_functions: anytype, comptime special_types: anytype) anyerror!void {
+    const io = init.io;
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
+
+    if (args.len > 1) {
+        const output_path = args[1];
+        var output = try std.Io.Dir.cwd().createFile(io, output_path, .{ .truncate = true });
+        defer output.close(io);
+
+        var buffer: [256]u8 = undefined;
+        var writer = output.writer(io, &buffer);
+        try streamToWriter(&writer.interface, Mod, stub_functions, special_types);
+        try writer.interface.flush();
+    } else {
+        const stdout = std.Io.File.stdout();
+        var buffer: [256]u8 = undefined;
+        var stdout_writer = stdout.writer(io, &buffer);
+        try streamToWriter(&stdout_writer.interface, Mod, stub_functions, special_types);
+        try stdout_writer.interface.flush();
+    }
+}

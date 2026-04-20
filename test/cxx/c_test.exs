@@ -1,10 +1,10 @@
 defmodule ZiglerTest.CXX.CTest do
   use ZiglerTest.IntegrationCase, async: true
 
-  use Zig, otp_app: :zigler, c: [include_dirs: "include", src: "src/*"]
+  use Zig, otp_app: :zigler, translate_c: "c.h", c: [include_dirs: "include", src: "src/*"]
 
   ~Z"""
-  const c = @cImport(@cInclude("c.h"));
+  const c = @import("c");
 
   pub const plus_one = c.plus_one;
   """

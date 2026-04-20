@@ -363,10 +363,10 @@ test "argument errors" do
   
     * 1st argument: 
   
-       expected: map | keyword (for `Arrow`)
+       expected: map | keyword (for `nif.Arrow`)
        got: `%{head: %{x: 4, y: 3}, tail: %{x: 2, y: 1.0}}`
        in field `:tail`:
-       | expected: map | keyword (for `Point2D`)
+       | expected: map | keyword (for `nif.Point2D`)
        | got: `%{x: 2, y: 1.0}`
        | in field `:y`:
        | | expected: integer (for `i32`)

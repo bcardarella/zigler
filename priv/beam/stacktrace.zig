@@ -1,30 +1,17 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const beam = @import("beam.zig");
-const options = @import("options.zig");
 
-const SelfInfo = std.debug.SelfInfo;
+var debug_threaded_io: std.Io.Threaded = undefined;
+var debug_threaded_io_initialized = false;
 
-var self_debug_info: ?SelfInfo = null;
-
-var debug_info_allocator: ?std.mem.Allocator = null;
-var debug_info_arena_allocator: std.heap.ArenaAllocator = undefined;
-fn getDebugInfoAllocator() std.mem.Allocator {
-    if (debug_info_allocator) |a| return a;
-
-    debug_info_arena_allocator = std.heap.ArenaAllocator.init(beam.allocator);
-    const allocator = debug_info_arena_allocator.allocator();
-    debug_info_allocator = allocator;
-    return allocator;
-}
-
-fn getSelfInfo() !*SelfInfo {
-    if (self_debug_info) |*info| {
-        return info;
-    } else {
-        self_debug_info = try SelfInfo.open(getDebugInfoAllocator());
-        return &self_debug_info.?;
+fn getDebugIo() std.Io {
+    if (!debug_threaded_io_initialized) {
+        debug_threaded_io = std.Io.Threaded.init(std.heap.page_allocator, .{});
+        debug_threaded_io_initialized = true;
     }
+
+    return debug_threaded_io.io();
 }
 
 fn make_empty_trace_item(opts: anytype) beam.term {
@@ -35,11 +22,29 @@ fn make_empty_trace_item(opts: anytype) beam.term {
     }, opts);
 }
 
-fn make_trace_item(debug_info: *SelfInfo, address: usize, opts: anytype) beam.term {
-    const module = debug_info.getModuleForAddress(address) catch return make_empty_trace_item(opts);
-    //defer module.deinit(debug_info_allocator.?);
+fn make_trace_item(address: usize, opts: anytype) beam.term {
+    const debug_info = std.debug.getSelfDebugInfo() catch return make_empty_trace_item(opts);
+    const symbol_allocator_fallback_size = @sizeOf(std.debug.Symbol) + @alignOf(std.debug.Symbol) - 1;
+    var symbol_fallback_allocator = std.heap.stackFallback(symbol_allocator_fallback_size, std.debug.getDebugInfoAllocator());
+    const symbol_allocator = symbol_fallback_allocator.get();
+    var symbols = std.ArrayList(std.debug.Symbol).initCapacity(symbol_allocator, 1) catch
+        return make_empty_trace_item(opts);
+    defer symbols.deinit(symbol_allocator);
 
-    const symbol_info = module.getSymbolAtAddress(std.heap.c_allocator, address) catch return make_empty_trace_item(opts);
+    var text_arena = std.heap.ArenaAllocator.init(std.debug.getDebugInfoAllocator());
+    defer text_arena.deinit();
+
+    debug_info.getSymbols(
+        getDebugIo(),
+        symbol_allocator,
+        text_arena.allocator(),
+        address,
+        false,
+        &symbols,
+    ) catch return make_empty_trace_item(opts);
+
+    if (symbols.items.len == 0) return make_empty_trace_item(opts);
+    const symbol_info = symbols.items[0];
 
     return beam.make(.{
         .source_location = symbol_info.source_location,
@@ -51,10 +56,6 @@ fn make_trace_item(debug_info: *SelfInfo, address: usize, opts: anytype) beam.te
 pub fn to_term(stacktrace: *std.builtin.StackTrace, opts: anytype) beam.term {
     if (builtin.strip_debug_info) return beam.make(.nil, opts);
 
-    const debug_info = getSelfInfo() catch return beam.make(.nil, opts);
-    // NOTE: we should never deinit the debug_info, as it doesn't change over the execution of
-    // the process.  It will be stored as a "global object".
-    
     var frame_index: usize = 0;
     var frames_left: usize = @min(stacktrace.index, stacktrace.instruction_addresses.len);
     var stacktrace_term = beam.make_empty_list(opts);
@@ -66,7 +67,7 @@ pub fn to_term(stacktrace: *std.builtin.StackTrace, opts: anytype) beam.term {
         frame_index = (frame_index + 1) % stacktrace.instruction_addresses.len;
     }) {
         const return_address = stacktrace.instruction_addresses[frame_index];
-        const new_trace_item = make_trace_item(debug_info, return_address -| 1, opts);
+        const new_trace_item = make_trace_item(return_address -| 1, opts);
         stacktrace_term = beam.make_list_cell(new_trace_item, stacktrace_term, opts);
     }
     return stacktrace_term;

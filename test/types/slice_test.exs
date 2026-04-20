@@ -254,7 +254,7 @@ defmodule ZiglerTest.Types.SliceTest do
 
     test "argumenterror on incorrect binary size" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::_*32>> (for `[]P`)\n     got: `<<0, 0, 0>>`\n     note: binary size must be a multiple of 4\n     got: 3\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::_*32>> (for `[]nif.P`)\n     got: `<<0, 0, 0>>`\n     note: binary size must be a multiple of 4\n     got: 3\n",
                    fn ->
                      slice_of_packed_structs(<<0, 0, 0>>)
                    end
@@ -296,7 +296,7 @@ defmodule ZiglerTest.Types.SliceTest do
 
     test "raises argumenterror on incorrect size" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::_*32>> (for `[]E`)\n     got: `<<0, 0, 0>>`\n     note: binary size must be a multiple of 4\n     got: 3\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::_*32>> (for `[]nif.E`)\n     got: `<<0, 0, 0>>`\n     note: binary size must be a multiple of 4\n     got: 3\n",
                    fn ->
                      slice_of_extern_structs(<<0, 0, 0>>)
                    end
@@ -337,11 +337,32 @@ defmodule ZiglerTest.Types.SliceTest do
   pub fn sentinel_terminated_test(passed: [:0]u8) u8 {
       return passed[3];
   }
+
+  pub fn sentinel_u16_list_test(passed: [:0]u16) u16 {
+      return passed[passed.len];
+  }
+
+  pub fn unaligned_binary_u32_test(passed: []u32) []u32 {
+      return common_slice_fun(passed);
+  }
   """
 
   describe "sentinel terminated slices" do
     test "are supported" do
       assert 0 == sentinel_terminated_test("foo")
+    end
+
+    test "list-backed sentinels are appended exactly once" do
+      assert 0 == sentinel_u16_list_test([1, 2, 3])
+    end
+
+    test "unaligned binaries are copied before typed access" do
+      binary = <<0, 1::32-native, 2::32-native, 3::32-native>>
+
+      assert [2, 3, 4] ==
+               binary
+               |> :binary.part(1, byte_size(binary) - 1)
+               |> unaligned_binary_u32_test()
     end
   end
 end

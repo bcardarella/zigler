@@ -1,7 +1,7 @@
 <% _ = opts %>
 const <%= @name %> = b.createModule(
     .{
-        .root_source_file = .{.cwd_relative = "<%= @path %>"},
+        .root_source_file = <%= if Path.type(@path) == :absolute, do: ".{ .cwd_relative = \"#{@path}\" }", else: "b.path(\"#{@path}\")" %>,
         .imports = &[_]std.Build.Module.Import{<%= for dep <- @deps, is_atom(dep) do%>
           .{
             .name = "<%= dep %>",

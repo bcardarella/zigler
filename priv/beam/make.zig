@@ -104,7 +104,7 @@ fn make_int(value: anytype, opts: anytype) beam.term {
             1...32 => return .{ .v = e.enif_make_uint(options.env(opts), @as(u32, @intCast(value))) },
             33...64 => return .{ .v = e.enif_make_uint64(options.env(opts), @as(u64, @intCast(value))) },
             else => {
-                const Bigger = std.meta.Int(.unsigned, comptime try std.math.ceilPowerOfTwo(u16, int.bits));
+                const Bigger = @Int(.unsigned, try std.math.ceilPowerOfTwo(u16, int.bits));
                 const buf_size = @sizeOf(Bigger);
                 var result: e.ErlNifTerm = undefined;
                 var intermediate = @as(Bigger, @intCast(value));
@@ -216,8 +216,9 @@ fn make_struct_binary(value: anytype, opts: anytype) beam.term {
     }
     const binary_size = @sizeOf(T);
     var result: beam.term = undefined;
-    const buf: *T = @ptrCast(@alignCast(e.enif_make_new_binary(options.env(opts), binary_size, &result.v)));
-    buf.* = value;
+    var value_copy = value;
+    const buf = e.enif_make_new_binary(options.env(opts), binary_size, &result.v);
+    @memcpy(buf[0..binary_size], std.mem.asBytes(&value_copy));
     return result;
 }
 

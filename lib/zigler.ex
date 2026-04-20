@@ -130,6 +130,7 @@ defmodule :zigler do
     |> Keyword.update(:c, [], &update_c/1)
     |> Keyword.put_new(:nifs, {:auto, []})
     |> update_if(:easy_c, &stringify/1)
+    |> update_if(:translate_c, &stringify_translate_c/1)
   end
 
   defp update_c(c_opts), do: update_if(c_opts, :easy_c, &stringify/1)
@@ -145,6 +146,12 @@ defmodule :zigler do
   defp stringify({:priv, payload}), do: {:priv, stringify(payload)}
   defp stringify({:system, payload}), do: {:system, stringify(payload)}
   defp stringify(other), do: other
+
+  defp stringify_translate_c([n | _] = charlist) when is_integer(n),
+    do: IO.iodata_to_binary(charlist)
+
+  defp stringify_translate_c(list) when is_list(list), do: Enum.map(list, &stringify/1)
+  defp stringify_translate_c(other), do: stringify(other)
 
   defp append_attrib(ast, key, value), do: ast ++ [{:attribute, {1, 1}, key, value}]
 

@@ -1,14 +1,14 @@
 defmodule Zigler.MixProject do
   use Mix.Project
 
-  def zig_version, do: "0.15.2"
+  def zig_version, do: "0.16.0"
 
   def project do
     env = Mix.env()
 
     [
       app: :zigler,
-      version: "0.15.2",
+      version: "0.16.0",
       elixir: "~> 1.15",
       start_permanent: env == :prod,
       elixirc_paths: elixirc_paths(env),
@@ -44,7 +44,7 @@ defmodule Zigler.MixProject do
       main: "Zig",
       extras: ["README.md" | guides(Mix.env())],
       groups_for_extras: [Guides: Path.wildcard("guides/*.md")],
-      zig_doc: [beam: [file: "priv/beam/beam.zig"]],
+      zig_doc: [beam: [file: "priv/beam/beam.zig"]]
     ]
   end
 

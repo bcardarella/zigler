@@ -35,10 +35,11 @@ defmodule CompilingC do
   use ExUnit.Case, async: true
   use Zig, 
     otp_app: :zigler,
+    translate_c: "included.h",
     c: [include_dirs: "include", src: "src/*"] 
 
   ~Z"""
-  const c = @cImport(@cInclude("included.h"));
+  const c = @import("c");
 
   pub const plus_one = c.plus_one;
   """
@@ -75,10 +76,13 @@ if Application.fetch_env!(:zigler, :test_blas) do
     use ExUnit.Case, async: true
     use Zig, 
       otp_app: :zigler,
+      translate_c: "cblas.h",
       c: [link_lib: {:system, "blas"}]
 
     ~Z"""
-    pub const dasum = @cImport(@cInclude("cblas.h")).cblas_dasum;
+    const c = @import("c");
+
+    pub const dasum = c.cblas_dasum;
     """
 
     test "dasum" do
@@ -90,6 +94,9 @@ if Application.fetch_env!(:zigler, :test_blas) do
 > ### linking against libcpp: {: .info}
 >
 > if you need to link against `libcpp`, the library has a special-cased option: `link_libcpp: true`
+
+For Zig `0.16.0` and newer, prefer Zigler's `translate_c:` option together with `const c =
+@import("c");` instead of using deprecated `@cImport` directly.
 
 ## Easy-C
 

@@ -353,6 +353,9 @@ defmodule Zig do
     otherwise the path will be treated as relative to the module file.
     You may provide code using either the `c` > `link_lib` option or `c` > `src`. You
     may also NOT provide any `~Z` blocks in your module.
+  - `translate_c`: a header or list of headers that should be translated into a Zig module
+    named `c` using Zig's build-system translate-c support. In Zig code, import this with
+    `const c = @import("c");`.
   - `zig_code_path`: path to a zig file that will be used to as a target.  A path beginning
     with `./` will be treated as relative to cwd (usually the project root), otherwise the
     path will be relative to the module file.  If you specify this option, you may NOT
@@ -386,6 +389,7 @@ defmodule Zig do
           c: [c_options],
           optimize: optimize | :env | {:env, optimize},
           easy_c: Path.t(),
+          translate_c: Path.t() | [Path.t()],
           nifs: {:auto, keyword(nif_options)} | keyword(nif_options),
           ignore: [atom],
           module: [{name :: atom, {path :: Path.t(), deps :: [atom]}}],

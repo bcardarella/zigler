@@ -16,18 +16,26 @@ defmodule Zig.BuildModule do
               ]
 
   alias Zig.Builder
-  alias Zig.C
-
   use Builder, template: "templates/build_extra_mod.zig.eex"
 
   def from_beam_module(build) do
     %__MODULE__{
       name: :nif,
-      path: build.zig_code_path,
-      deps: [:erl_nif, :beam, :attributes] ++ Enum.map(build.extra_modules, &module_spec/1),
+      path: Builder.nif_file(),
+      deps:
+        [:erl_nif, :beam, :attributes]
+        |> maybe_add_easy_c_dep(build)
+        |> maybe_add_translate_c_dep(build)
+        |> Kernel.++(Enum.map(build.extra_modules, &module_spec/1)),
       c: build.c
     }
   end
+
+  defp maybe_add_easy_c_dep(deps, %{easy_c: nil}), do: deps
+  defp maybe_add_easy_c_dep(deps, _build), do: deps ++ [:easy_c]
+
+  defp maybe_add_translate_c_dep(deps, %{translate_c: nil}), do: deps
+  defp maybe_add_translate_c_dep(deps, _build), do: deps ++ [:c]
 
   defp module_spec(%{name: name}), do: name
   defp module_spec(%{dep: dep, src_mod: src_mod, dst_mod: dst_mod}), do: {dep, {src_mod, dst_mod}}
@@ -35,21 +43,10 @@ defmodule Zig.BuildModule do
   # default modules
 
   def erl_nif do
-    system_include_path =
-      Path.join([:code.root_dir(), "/erts-#{:erlang.system_info(:version)}", "/include"])
-
-    erl_nif_win_path =
-      :zigler
-      |> :code.priv_dir()
-      |> Path.join("erl_nif_win")
-
     %__MODULE__{
       name: :erl_nif,
       path: Builder.beam_file("erl_nif.zig"),
-      c: %C{
-        include_dirs: [system: system_include_path, system: erl_nif_win_path],
-        link_libc: true
-      }
+      deps: [:erl_nif_raw]
     }
   end
 
@@ -79,7 +76,7 @@ defmodule Zig.BuildModule do
     %__MODULE__{
       name: :sema,
       path: Builder.beam_file("sema.zig"),
-      deps: [:nif],
+      deps: [:nif, :beam, :erl_nif],
       root?: true
     }
   end

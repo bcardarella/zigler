@@ -68,7 +68,8 @@ fn cleanup_pointer(ptr: anytype, opts: anytype) void {
                 cleanup(item, opts);
             }
             if (info.sentinel_ptr) |_| {
-                options.allocator(opts).free(@as([]u8, @ptrCast(ptr)));
+                const base: [*]info.child = @ptrCast(ptr.ptr);
+                options.allocator(opts).free(base[0 .. ptr.len + 1]);
             } else {
                 options.allocator(opts).free(ptr);
             }
@@ -87,11 +88,19 @@ fn cleanup_pointer(ptr: anytype, opts: anytype) void {
             if (options.size(opts)) |size| {
                 if (info.is_allowzero) {
                     if (ptr) |_| {
-                        const underlying_slice = ptr[0..size];
+                        const base: [*]info.child = @ptrCast(ptr);
+                        const underlying_slice = if (info.sentinel_ptr) |_|
+                            base[0 .. size + 1]
+                        else
+                            base[0..size];
                         options.allocator(opts).free(underlying_slice);
                     }
                 } else {
-                    const underlying_slice = ptr[0..size];
+                    const base: [*]info.child = @ptrCast(ptr);
+                    const underlying_slice = if (info.sentinel_ptr) |_|
+                        base[0 .. size + 1]
+                    else
+                        base[0..size];
                     options.allocator(opts).free(underlying_slice);
                 }
             }

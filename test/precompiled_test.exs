@@ -94,7 +94,7 @@ if Version.match?(this_version, ">= 16.1.0") and not skip do
   defmodule ZiglerTest.MultiplatformPrecompiledTest do
     use ExUnit.Case, async: true
 
-    @lib_address "https://github.com/E-xyza/zigler/releases/download/0.15.1/Elixir.ZiglerTest.MultiplatformPrecompiledTest.#VERSION.#TRIPLE.#EXT"
+    @lib_address "https://github.com/E-xyza/zigler/releases/download/0.16.0/Elixir.ZiglerTest.MultiplatformPrecompiledTest.#VERSION.#TRIPLE.#EXT"
 
     @shasum [
       "aarch64-freebsd-none": "1102b0c61fa633c4ce2b23abd4c4f238ef44ce9c384b0a9753ff27a541d065d0",
@@ -126,7 +126,7 @@ if Version.match?(this_version, ">= 16.1.0") and not skip do
 
     test "staging directory only contains the so file" do
       assert [
-               "Elixir.ZiglerTest.MultiplatformPrecompiledTest.0.15.1" <> _
+               "Elixir.ZiglerTest.MultiplatformPrecompiledTest.0.16.0" <> _
              ] = File.ls!(Zig.Builder.staging_directory(__MODULE__))
     end
 

@@ -25,6 +25,7 @@ defmodule Zig.Module do
                 :zig_code_path,
                 :version,
                 :easy_c,
+                :translate_c,
                 :fingerprint,
                 :dir,
                 :c,
@@ -65,6 +66,7 @@ defmodule Zig.Module do
           zig_code_path: nil | Path.t(),
           version: String.t(),
           easy_c: nil | Path.t(),
+          translate_c: nil | [String.t()],
           fingerprint: String.t(),
           manifest: nil | Manifest.t(),
           manifest_module: nil | module,
@@ -157,6 +159,7 @@ defmodule Zig.Module do
     |> Options.normalize_path(:module_code_path, context)
     |> Options.normalize_path(:zig_code_path, context)
     |> normalize_easy_c(context)
+    |> normalize_translate_c(context)
     |> Options.normalize_kw(:ignore, [], &normalize_atom_or_atomlist/2, context)
     |> Options.normalize_kw(:resources, [], &normalize_atom_or_atomlist/2, context)
     |> Options.validate(:cleanup, :boolean, context)
@@ -361,6 +364,38 @@ defmodule Zig.Module do
   rescue
     _ ->
       Options.raise_with("must be a path", opts[:easy_c], Options.push_key(context, :easy_c))
+  end
+
+  defp normalize_translate_c(opts, context) do
+    if Keyword.has_key?(opts, :translate_c) do
+      Keyword.update!(opts, :translate_c, &normalize_translate_c_headers(&1, context))
+    else
+      opts
+    end
+  end
+
+  defp normalize_translate_c_headers([n | _] = charlist, _context) when is_integer(n) do
+    [IO.iodata_to_binary(charlist)]
+  rescue
+    _ ->
+      raise ArgumentError
+  end
+
+  defp normalize_translate_c_headers(headers, context) do
+    headers
+    |> List.wrap()
+    |> Enum.map(fn header ->
+      try do
+        IO.iodata_to_binary(header)
+      rescue
+        _ ->
+          Options.raise_with(
+            "must be iodata or a list of iodata",
+            header,
+            Options.push_key(context, :translate_c)
+          )
+      end
+    end)
   end
 
   @atom_or_atomlist_error "must be an atom or a list of atoms"
@@ -595,7 +630,7 @@ defmodule Zig.Module do
           "#{mode}.linkSystemLibrary(\"#{libname}\");"
 
         path ->
-          "#{mode}.addObjectFile(.{.cwd_relative = \"#{path}\"});"
+          "#{mode}.addObjectFile(#{render_build_path(path)});"
       end)
 
     c_srcs =
@@ -603,7 +638,7 @@ defmodule Zig.Module do
         {c_src, flags} ->
           """
           #{mode}.addCSourceFiles(.{
-            .root = .{.cwd_relative = "#{Path.dirname(c_src)}"},
+            .root = #{render_build_path(Path.dirname(c_src))},
             .files = &.{"#{Path.basename(c_src)}"},
             .flags = &.{ #{render_flags(flags)}},
           });
@@ -613,12 +648,76 @@ defmodule Zig.Module do
     link_libs ++ c_srcs
   end
 
-  defp render_flags(flags) do
-    Enum.map_join(flags, ", ", &~s("#{&1}\"))
+  def render_easy_c(nil, _), do: ""
+
+  def render_easy_c(_easy_c_header, %C{} = c) do
+    render_translate_c("easy_c", "easy_c.h", c)
   end
 
-  defp escape(string) do
-    String.replace(string, "\"", "\\\"")
+  def render_translate_c(nil, _), do: ""
+
+  def render_translate_c(_headers, %C{} = c) do
+    render_translate_c("c", "zigler_translate_c.h", c)
+  end
+
+  defp render_translate_c(module_name, header_name, %C{} = c) do
+    translate_name = "#{module_name}_translate"
+
+    lines = [
+      """
+      const #{translate_name} = b.addTranslateC(.{
+          .root_source_file = b.path(\"#{header_name}\"),
+          .target = resolved_target,
+          .optimize = optimize,
+          .link_libc = true,
+      });
+      """
+    ]
+
+    includes =
+      Enum.map(c.include_dirs, fn
+        {:system, path} ->
+          "#{translate_name}.addSystemIncludePath(#{render_build_path(path)});"
+
+        path ->
+          "#{translate_name}.addIncludePath(#{render_build_path(path)});"
+      end)
+
+    system_libs =
+      Enum.flat_map(c.link_lib, fn
+        {:system, libname} -> ["#{translate_name}.linkSystemLibrary(\"#{libname}\", .{});"]
+        _ -> []
+      end)
+
+    module = ["const #{module_name} = #{translate_name}.createModule();"]
+
+    Enum.join(lines ++ includes ++ system_libs ++ module, "\n")
+  end
+
+  def render_erl_nif_raw do
+    """
+    const erl_nif_raw_translate = b.addTranslateC(.{
+        .root_source_file = b.path(\"#{Builder.erl_nif_header_file()}\"),
+        .target = resolved_target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    erl_nif_raw_translate.addIncludePath(b.path(\"#{Builder.erl_include_dir()}\"));
+    erl_nif_raw_translate.addIncludePath(b.path(\"#{Builder.erl_nif_win_dir()}\"));
+    const erl_nif_raw = erl_nif_raw_translate.createModule();
+    """
+  end
+
+  defp render_flags(flags) do
+    Enum.map_join(flags, ", ", &~s("#{&1}"))
+  end
+
+  defp render_build_path(path) do
+    if Path.type(path) == :absolute do
+      ".{ .cwd_relative = \"#{path}\" }"
+    else
+      "b.path(\"#{path}\")"
+    end
   end
 
   defp sysarch_to_key do

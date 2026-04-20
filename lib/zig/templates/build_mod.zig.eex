@@ -7,6 +7,7 @@ pub fn build(b: *std.Build) void {
     const resolved_target = b.standardTargetOptions(<%=Zig.Target.for_builder()%>);
     const optimize: std.builtin.OptimizeMode = <%= render_optimize_mode(assigns) %>;
     const error_tracing = <%= @error_tracing %>;
+    const sema_output_path = b.option([]const u8, "zigler-sema-out", "Path to write sema JSON") orelse "sema.json";
 
     const mode = b.option(BuildMode, "zigler-mode", "Build either the nif library or the sema analysis module") orelse .nif_lib;
 
@@ -20,6 +21,9 @@ pub fn build(b: *std.Build) void {
     switch (mode) {
         .nif_lib => {
 
+            <%= render_easy_c(@easy_c, @c) %>
+            <%= render_translate_c(@translate_c, @c) %>
+            <%= render_erl_nif_raw() %>
             <%= Builder.render_build(BuildModule.erl_nif()) %>
             <%= Builder.render_build(BuildModule.beam()) %>
             <%= Builder.render_build(BuildModule.attributes()) %>
@@ -36,8 +40,8 @@ pub fn build(b: *std.Build) void {
                 .root_module = nif_shim
             });
 
-            <%= render_c(@c, :lib) %>
-            <%= for extra_module <- @extra_modules, do: render_c(extra_module, :lib) %>
+            <%= render_c(@c, "lib.root_module") %>
+            <%= for extra_module <- @extra_modules, do: render_c(extra_module, "lib.root_module") %>
 
             lib.linker_allow_shlib_undefined = true;
 
@@ -56,6 +60,8 @@ pub fn build(b: *std.Build) void {
             b.installArtifact(lib);
         },
         .sema => {
+            <%= render_easy_c(@easy_c, @c) %>
+            <%= render_translate_c(@translate_c, @c) %>
             <%= Builder.render_build(BuildModule.stub_erl_nif()) %>
             <%= Builder.render_build(BuildModule.beam()) %>
             <%= Builder.render_build(BuildModule.attributes()) %>
@@ -68,12 +74,13 @@ pub fn build(b: *std.Build) void {
                 .root_module = sema
             });
 
-            <%= render_c(@c, :sema_exe) %>
-            <%= for extra_module <- @extra_modules, do: render_c(extra_module, :sema_exe) %>
+            <%= render_c(@c, "sema_exe.root_module") %>
+            <%= for extra_module <- @extra_modules, do: render_c(extra_module, "sema_exe.root_module") %>
 
             b.installArtifact(sema_exe);
 
             const sema_run_cmd = b.addRunArtifact(sema_exe);
+            sema_run_cmd.addArg(sema_output_path);
             if (b.args) |args| sema_run_cmd.addArgs(args);
             const sema_step = b.step("sema", "Run sema");
             sema_step.dependOn(&sema_run_cmd.step);

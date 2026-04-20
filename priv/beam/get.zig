@@ -68,7 +68,7 @@ pub fn get_int(comptime T: type, src: beam.term, opts: anytype) GetError!T {
             else => {
                 // for integers bigger than 64-bytes the number
                 // is imported as a binary.
-                const Bigger = std.meta.Int(.unsigned, comptime try std.math.ceilPowerOfTwo(u16, int.bits));
+                const Bigger = @Int(.unsigned, try std.math.ceilPowerOfTwo(u16, int.bits));
                 const bytes = @sizeOf(Bigger);
 
                 var result: e.ErlNifBinary = undefined;
@@ -101,7 +101,7 @@ pub fn get_int(comptime T: type, src: beam.term, opts: anytype) GetError!T {
             else => {
                 // for integers bigger than 64-bytes the number
                 // is imported as a binary.
-                const Bigger = std.meta.Int(.unsigned, comptime try std.math.ceilPowerOfTwo(u16, int.bits));
+                const Bigger = @Int(.unsigned, try std.math.ceilPowerOfTwo(u16, int.bits));
                 const bytes = @sizeOf(Bigger);
 
                 var result: e.ErlNifBinary = undefined;
@@ -174,7 +174,12 @@ pub fn get_enum(comptime T: type, src: beam.term, opts: anytype) !T {
 
             // put erasure on get_int setting the error_line
             const result = try get_int(IntType, src, opts);
-            return try std.meta.intToEnum(T, result);
+
+            inline for (enum_info.fields) |field| {
+                if (field.value == result) return @enumFromInt(result);
+            }
+
+            return GetError.badarg;
         },
         .atom => {
             errdefer error_line(.{ "note: not an atom value for ", .{ .typename, @typeName(T) }, " (should be one of `", .{ .inspect, enum_values }, "`)" }, opts);
@@ -392,6 +397,7 @@ pub fn get_slice(comptime T: type, src: beam.term, opts: anytype) !T {
 pub fn get_slice_binary(comptime T: type, src: beam.term, opts: anytype) !T {
     const slice_info = @typeInfo(T).pointer;
     const Child = slice_info.child;
+    const sentinel_ptr = typedSliceSentinelPtr(slice_info);
 
     const byte_size_condition = get_byte_size(T) orelse return GetError.badarg;
     const expected_size_multiple = byte_size_condition.variable;
@@ -406,29 +412,24 @@ pub fn get_slice_binary(comptime T: type, src: beam.term, opts: anytype) !T {
     }
 
     const item_count = str_res.size / expected_size_multiple;
-    const result_ptr = @as([*]Child, @ptrCast(@alignCast(str_res.data)));
-
-    if (slice_info.is_const) {
+    if (slice_info.is_const and sentinel_ptr == null and isAlignedFor(str_res.data, Child)) {
+        const result_ptr = @as([*]Child, @ptrCast(@alignCast(str_res.data)));
         return result_ptr[0..item_count];
-    } else {
-        const sentinel_ptr: ?*const Child = if (slice_info.sentinel_ptr) |sentinel| @ptrCast(@alignCast(sentinel)) else options.sentinel_ptr(Child, opts);
-
-        const alloc = options.allocator(opts);
-        const alloc_count = if (sentinel_ptr) |_| item_count + 1 else item_count;
-
-        const result = alloc.alloc(Child, alloc_count) catch |err| {
-            return err;
-        };
-
-        if (sentinel_ptr) |sentinel| {
-            @memcpy(result[0..item_count], result_ptr[0..item_count]);
-            result[alloc_count - 1] = sentinel.*;
-        } else {
-            @memcpy(result, result_ptr[0..item_count]);
-        }
-
-        return @as(T, @ptrCast(result));
     }
+
+    const alloc = options.allocator(opts);
+    const alloc_count = if (sentinel_ptr) |_| item_count + 1 else item_count;
+    const result = alloc.alloc(Child, alloc_count) catch |err| {
+        return err;
+    };
+
+    @memcpy(std.mem.sliceAsBytes(result[0..item_count]), str_res.data[0..str_res.size]);
+
+    if (sentinel_ptr) |sentinel| {
+        result[alloc_count - 1] = sentinel.*;
+    }
+
+    return typedSliceResult(T, result, item_count);
 }
 
 pub fn get_slice_list(comptime T: type, src: beam.term, opts: anytype) !T {
@@ -437,7 +438,7 @@ pub fn get_slice_list(comptime T: type, src: beam.term, opts: anytype) !T {
     var length: c_uint = undefined;
     const alloc = options.allocator(opts);
 
-    const sentinel_ptr: ?*const Child = if (slice_info.sentinel_ptr) |sentinel| @ptrCast(@alignCast(sentinel)) else options.sentinel_ptr(Child, opts);
+    const sentinel_ptr = typedSliceSentinelPtr(slice_info);
 
     if (e.enif_get_list_length(options.env(opts), src.v, &length) == 0) return GetError.unreachable_error;
     const alloc_length = if (sentinel_ptr) |_| length + 1 else length;
@@ -446,7 +447,7 @@ pub fn get_slice_list(comptime T: type, src: beam.term, opts: anytype) !T {
     errdefer alloc.free(result);
 
     var list: e.ErlNifTerm = src.v;
-    for (result, 0..) |*item, index| {
+    for (result[0..length], 0..) |*item, index| {
         var head: e.ErlNifTerm = undefined;
         if (e.enif_get_list_cell(options.env(opts), list, &head, &list) == 0) return GetError.unreachable_error;
         item.* = get(Child, .{ .v = head }, opts) catch |err| {
@@ -463,17 +464,32 @@ pub fn get_slice_list(comptime T: type, src: beam.term, opts: anytype) !T {
         result[length] = sentinel.*;
     }
 
-    return @as(T, @ptrCast(result));
+    return typedSliceResult(T, result, @as(usize, length));
 }
 
 pub fn get_manypointer(comptime T: type, src: beam.term, opts: anytype) !T {
     // this is equivalent to creating a slice and then discarding the length term
     const Child = @typeInfo(T).pointer.child;
     const slice = try get_slice([]Child, src, opts);
-    const result = @as(T, @ptrCast(slice.ptr));
     if (@typeInfo(T).pointer.sentinel_ptr) |sentinel| {
+        const alloc = options.allocator(opts);
+        const result = try alloc.alloc(Child, slice.len + 1);
+        errdefer alloc.free(result);
+
+        @memcpy(result[0..slice.len], slice);
         result[slice.len] = @as(*const Child, @ptrCast(@alignCast(sentinel))).*;
+        alloc.free(slice);
+
+        if (@hasField(@TypeOf(opts), "size")) {
+            opts.size.* = slice.len;
+        }
+        if (@hasField(@TypeOf(opts), "in_out")) {
+            opts.in_out.* = result.ptr;
+        }
+        return @as(T, @ptrCast(result.ptr));
     }
+
+    const result = @as(T, @ptrCast(slice.ptr));
     if (@hasField(@TypeOf(opts), "size")) {
         opts.size.* = slice.len;
     }
@@ -481,6 +497,26 @@ pub fn get_manypointer(comptime T: type, src: beam.term, opts: anytype) !T {
         opts.in_out.* = result.ptr;
     }
     return result;
+}
+
+fn isAlignedFor(ptr: [*]u8, comptime T: type) bool {
+    return @alignOf(T) <= 1 or @intFromPtr(ptr) % @alignOf(T) == 0;
+}
+
+fn typedSliceSentinelPtr(comptime slice_info: std.builtin.Type.Pointer) ?*const slice_info.child {
+    return if (slice_info.sentinel_ptr) |sentinel|
+        @ptrCast(@alignCast(sentinel))
+    else
+        null;
+}
+
+fn typedSliceResult(comptime T: type, buffer: anytype, len: usize) T {
+    const slice_info = @typeInfo(T).pointer;
+    if (slice_info.sentinel_ptr) |sentinel| {
+        const typed_sentinel: *const slice_info.child = @ptrCast(@alignCast(sentinel));
+        return buffer[0..len :typed_sentinel.*];
+    }
+    return buffer[0..len];
 }
 
 pub fn get_cpointer(comptime T: type, src: beam.term, opts: anytype) !T {
@@ -581,6 +617,10 @@ fn fill_array(comptime T: type, result: *T, src: beam.term, opts: anytype) GetEr
                 error_line(.{ "note: length ", .{ .inspect, array_info.len }, " expected but got length ", .{ .inspect, list_len + array_info.len } }, opts);
                 return GetError.badarg;
             }
+
+            if (array_info.sentinel_ptr) |sentinel| {
+                result[array_info.len] = @as(*const Child, @ptrCast(@alignCast(sentinel))).*;
+            }
         },
         .bitstring => {
             beam.ignore_when_sema();
@@ -599,6 +639,10 @@ fn fill_array(comptime T: type, result: *T, src: beam.term, opts: anytype) GetEr
             }
 
             @memcpy(u8_result_ptr[0..str_res.size], str_res.data[0..str_res.size]);
+
+            if (array_info.sentinel_ptr) |sentinel| {
+                result[array_info.len] = @as(*const Child, @ptrCast(@alignCast(sentinel))).*;
+            }
         },
         else => return GetError.badarg,
     }
@@ -701,21 +745,30 @@ pub fn StructRegistry(comptime SourceStruct: type) type {
     const source_fields = source_info.@"struct".fields;
     const default = false;
 
-    var fields: [source_fields.len]std.builtin.Type.StructField = undefined;
+    const names = comptime blk: {
+        var result: [source_fields.len][]const u8 = undefined;
 
-    for (source_fields, 0..) |source_field, index| {
-        fields[index] = .{ .name = source_field.name, .type = bool, .default_value_ptr = &default, .is_comptime = false, .alignment = @alignOf(*bool) };
-    }
+        for (source_fields, 0..) |source_field, index| {
+            result[index] = source_field.name;
+        }
 
-    const decls = [0]std.builtin.Type.Declaration{};
-    const constructed_struct = std.builtin.Type.Struct{
-        .layout = .auto,
-        .fields = fields[0..],
-        .decls = decls[0..],
-        .is_tuple = false,
+        break :blk result;
     };
 
-    return @Type(.{ .@"struct" = constructed_struct });
+    comptime var field_types: [source_fields.len]type = undefined;
+    comptime var field_attrs: [source_fields.len]std.builtin.Type.StructField.Attributes = undefined;
+
+    for (source_fields, 0..) |source_field, index| {
+        _ = source_field;
+        field_types[index] = bool;
+        field_attrs[index] = .{
+            .default_value_ptr = &default,
+            .@"comptime" = false,
+            .@"align" = @alignOf(bool),
+        };
+    }
+
+    return @Struct(.auto, null, names[0..], &field_types, &field_attrs);
 }
 
 fn null_or_atom(comptime T: type, src: beam.term, opts: anytype) !T {

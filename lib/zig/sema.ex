@@ -614,6 +614,7 @@ defmodule Zig.Sema do
 
   def _obtain_precompiled_sema_json(%{precompiled: {:web, address, shasum}} = module) do
     file = http_get!(address)
+    sema_json = http_get(sidecar_url(address))
 
     found_hash =
       :sha256
@@ -629,12 +630,24 @@ defmodule Zig.Sema do
     File.mkdir_p!(staging_dir)
     File.write!(staging_path, file)
 
+    if sema_json do
+      File.write!(sidecar_path(staging_path), sema_json)
+    end
+
     _obtain_precompiled_sema_json(%{module | precompiled: staging_path})
+  end
+
+  def _obtain_precompiled_sema_json(%{precompiled: file} = module) do
+    if File.exists?(sidecar_path(file)) do
+      {module, File.read!(sidecar_path(file))}
+    else
+      obtain_embedded_precompiled_sema_json(module)
+    end
   end
 
   case :os.type() do
     {:unix, :darwin} ->
-      def _obtain_precompiled_sema_json(%{precompiled: file} = module) do
+      defp obtain_embedded_precompiled_sema_json(%{precompiled: file} = module) do
         case System.cmd("otool", ["-s", "__DATA", "__sema", file]) do
           {out, 0} -> {module, parse_otool_sema(out)}
           {_, other} -> raise "error obtaining semantic analysis from #{file} (#{other})"
@@ -668,7 +681,7 @@ defmodule Zig.Sema do
 
     {:unix, :freebsd} ->
       # freebsd
-      def _obtain_precompiled_sema_json(%{precompiled: file} = module) do
+      defp obtain_embedded_precompiled_sema_json(%{precompiled: file} = module) do
         tmp_path =
           16
           |> :crypto.strong_rand_bytes()
@@ -688,7 +701,7 @@ defmodule Zig.Sema do
 
     {:unix, _} ->
       # linux
-      def _obtain_precompiled_sema_json(%{precompiled: file} = module) do
+      defp obtain_embedded_precompiled_sema_json(%{precompiled: file} = module) do
         case System.cmd("objcopy", ["--dump-section", ".sema=/dev/stdout", file]) do
           {json, 0} -> {module, String.trim_trailing(json, <<0>>)}
           {_, other} -> raise "error obtaining semantic analysis from #{file} (#{other})"
@@ -696,7 +709,7 @@ defmodule Zig.Sema do
       end
 
     {_, :nt} ->
-      def _obtain_precompiled_sema_json(%{precompiled: file} = module) do
+      defp obtain_embedded_precompiled_sema_json(%{precompiled: file} = module) do
         tmp_path =
           16
           |> :crypto.strong_rand_bytes()
@@ -751,4 +764,27 @@ defmodule Zig.Sema do
 
     body
   end
+
+  defp http_get(url) do
+    case :httpc.request(
+           :get,
+           {url, []},
+           [
+             ssl:
+               [
+                 depth: 100,
+                 customize_hostname_check: [
+                   match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+                 ]
+               ] ++ ssl_opts()
+           ],
+           body_format: :binary
+         ) do
+      {:ok, {{_, 200, _}, _headers, body}} -> body
+      _ -> nil
+    end
+  end
+
+  defp sidecar_url(url), do: url <> ".sema.json"
+  defp sidecar_path(path), do: path <> ".sema.json"
 end

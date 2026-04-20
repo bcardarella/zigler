@@ -17,11 +17,7 @@
 //! refer to the [erlang documentation](https://erlang.org/doc/man/erl_nif.html)
 //! for available functions
 
-// note: currently, zig is incapable of substituting a macro variable for a
-// C struct field.  Until that is fixed
-const builtin = @import("builtin");
-
-const e = if (builtin.os.tag == .windows) @cImport(@cInclude("erl_nif_win.h")) else @cImport(@cInclude("erl_nif.h"));
+const e = @import("erl_nif_raw");
 
 pub const ErlNifTerm = e.ERL_NIF_TERM;
 

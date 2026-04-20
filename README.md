@@ -25,7 +25,7 @@ by adding `zigler` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:zigler, "~> 0.15.1", runtime: false}
+    {:zigler, "~> 0.16.0", runtime: false}
   ]
 end
 ```
@@ -36,7 +36,7 @@ end
 
 TBD.
 
-`~/.cache/zigler/zig-linux-<arch>-0.15.1`
+`~/.cache/zigler/zig-linux-<arch>-0.16.0`
 
 ### Main Installation
 
@@ -49,7 +49,7 @@ have difficulty.
 ```erlang
 {plugins, [rebar_mix]}.
 
-{deps, [{zigler, "0.14"}]}.
+{deps, [{zigler, "0.16"}]}.
 
 ```
 
@@ -151,13 +151,12 @@ if {:unix, :linux} == :os.type() do
   defmodule Blas do
     use Zig,     
       otp_app: :zigler,
+      translate_c: "cblas.h",
       c: [link_lib: {:system, "blas"}]
   
     ~Z"""
     const beam = @import("beam");
-    const blas = @cImport({
-        @cInclude("cblas.h");
-    });
+    const blas = @import("c");
 
     const BadArgs = error { badarg };
   

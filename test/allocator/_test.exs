@@ -12,7 +12,9 @@ defmodule ZiglerTest.AllocatorTest do
   }
 
   pub fn raw_free(addr: usize) void {
-      beam.raw_allocator.free(@as([*]u8, @ptrFromInt(addr))[0..10_000]);
+      const ptr = @as([*]u8, @ptrFromInt(addr));
+      const memory: []u8 = ptr[0..10_000];
+      beam.raw_allocator.free(memory);
   }
   """
 
@@ -42,7 +44,9 @@ defmodule ZiglerTest.AllocatorTest do
   }
 
   pub fn free(addr: usize) void {
-      beam.allocator.free(@as([*]u8, @ptrFromInt(addr))[0..10_000]);
+      const ptr = @as([*]u8, @ptrFromInt(addr));
+      const memory: []u8 = ptr[0..10_000];
+      beam.allocator.free(memory);
   }
   """
 
@@ -75,7 +79,9 @@ defmodule ZiglerTest.AllocatorTest do
     }
 
     pub fn debug_free(addr: usize) void {
-        beam.debug_allocator.free(@as([*]u8, @ptrFromInt(addr))[0..10_000]);
+        const ptr = @as([*]u8, @ptrFromInt(addr));
+        const memory: []u8 = ptr[0..10_000];
+        beam.debug_allocator.free(memory);
     }
     """
 

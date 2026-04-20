@@ -15,21 +15,21 @@ defmodule Zig.Command do
   #############################################################################
   ## API
 
-  def run_zig(command, opts) do
-    args = String.split(command)
-
+  def run_zig(args, opts) when is_list(args) do
     base_opts = Keyword.take(opts, [:cd, :stderr_to_stdout])
     zig_cmd = executable_path()
-    Logger.debug("running command: #{zig_cmd} #{command}")
+    Logger.debug("running command: #{Enum.join([zig_cmd | args], " ")}")
 
     case System.cmd(zig_cmd, args, base_opts) do
       {result, 0} ->
         result
 
       {error, code} ->
-        raise Zig.CompileError, command: command, code: code, error: error
+        raise Zig.CompileError, command: Enum.join(args, " "), code: code, error: error
     end
   end
+
+  def run_zig(command, opts) when is_binary(command), do: run_zig(String.split(command), opts)
 
   def run_sema!(module) do
     # nerves will put in a `CC` command that we need to bypass because it misidentifies
@@ -37,10 +37,15 @@ defmodule Zig.Command do
     System.delete_env("CC")
 
     staging_dir = Path.dirname(module.module_code_path)
+    sema_output_path = Path.join(staging_dir, "sema.json")
 
-    run_zig("build -Dzigler-mode=sema", cd: staging_dir, stderr_to_stdout: true)
+    run_zig(
+      ["build", "sema", "-Dzigler-mode=sema", "-Dzigler-sema-out=#{sema_output_path}"],
+      cd: staging_dir,
+      stderr_to_stdout: true
+    )
 
-    attempt_json(staging_dir, 5)
+    File.read!(sema_output_path)
   end
 
   # Documentation-specific semantic analysis for zig_doc compatibility
@@ -59,6 +64,8 @@ defmodule Zig.Command do
     File.mkdir_p!(tmp_dir)
 
     # Create build.zig that imports the files we need
+    sema_output_path = Path.join(tmp_dir, "sema.json")
+
     build_zig = """
     const std = @import("std");
 
@@ -87,7 +94,8 @@ defmodule Zig.Command do
         b.installArtifact(exe);
 
         const run_cmd = b.addRunArtifact(exe);
-        const run_step = b.step("run", "Run sema_doc");
+        run_cmd.addArg("#{sema_output_path}");
+        const run_step = b.step("sema", "Run sema_doc");
         run_step.dependOn(&run_cmd.step);
     }
     """
@@ -96,59 +104,37 @@ defmodule Zig.Command do
     File.write!(build_zig_path, build_zig)
 
     try do
-      # Run zig build to execute sema_doc
-      run_zig("build run", cd: tmp_dir, stderr_to_stdout: true)
+      run_zig(["build", "sema"], cd: tmp_dir, stderr_to_stdout: true)
+      File.read!(sema_output_path)
     after
       File.rm_rf!(tmp_dir)
     end
   end
 
-  # this function needs to be repeated on the windows platform because it sometimes fails with
-  # no text.
-  defp attempt_json(_, 0) do
-    raise Zig.CompileError, command: "sema"
-  end
-
-  defp attempt_json(staging_dir, n) do
-    staging_dir
-    |> Path.join("zig-out/bin/sema")
-    |> System.cmd(["--json"])
-    |> case do
-      {"", 0} ->
-        Process.sleep(100)
-        attempt_json(staging_dir, n - 1)
-
-      {res, 0} ->
-        res
-
-      {error, code} ->
-        raise Zig.CompileError, command: "sema", code: code, error: error
-    end
-  end
-
   def fmt(file) do
     if System.get_env("ZIG_FMT", "true") != "false" do
-      run_zig("fmt #{file}", [])
+      run_zig(["fmt", file], [])
     end
   end
 
   def compile!(module = %{precompiled: nil}) do
     staging_directory = Builder.staging_directory(module.module)
     precompiler_settings = precompile_meta()
+    sema_source_path = Path.join(staging_directory, "sema.json")
 
     so_dir =
       if precompiler_settings do
         Path.dirname(module.file)
       else
-        :code.priv_dir(module.otp_app)
+        module.otp_app |> :code.priv_dir() |> to_string()
       end
 
     lib_dir = Path.join(so_dir, "lib")
     dst_lib_path = Path.join(lib_dir, dst_lib_name(module))
 
-    target = precompile_name("-Dtarget=")
+    target_args = if target = precompile_name("-Dtarget="), do: [target], else: []
 
-    run_zig("build #{target} --prefix #{so_dir}",
+    run_zig(["build" | target_args] ++ ["--prefix", so_dir],
       cd: staging_directory,
       stderr_to_stdout: true
     )
@@ -172,9 +158,14 @@ defmodule Zig.Command do
     # as this is required by two different build systems, we might as well
     # remove on all.
     File.rm(dst_lib_path)
+    File.rm(sema_sidecar_path(dst_lib_path))
 
     if src_lib_path != dst_lib_path do
       File.cp!(src_lib_path, dst_lib_path)
+    end
+
+    if File.exists?(sema_source_path) do
+      File.cp!(sema_source_path, sema_sidecar_path(dst_lib_path))
     end
 
     precompile_callback(dst_lib_path)
@@ -193,7 +184,7 @@ defmodule Zig.Command do
       "skipping compile step for precompiled module #{module.module}, at #{module.precompiled}"
     )
 
-    so_dir = :code.priv_dir(module.otp_app)
+    so_dir = module.otp_app |> :code.priv_dir() |> to_string()
     lib_dir = Path.join(so_dir, "lib")
 
     dst_lib_path = Path.join(lib_dir, dst_lib_name(module))
@@ -207,14 +198,21 @@ defmodule Zig.Command do
       # on MacOS, we must delete the old library because otherwise library
       # integrity checker will kill the process
       File.rm(dst_lib_path)
+      File.rm(sema_sidecar_path(dst_lib_path))
       File.cp!(module.precompiled, dst_lib_path)
+
+      src_sema_path = sema_sidecar_path(module.precompiled)
+
+      if File.exists?(src_sema_path) do
+        File.cp!(src_sema_path, sema_sidecar_path(dst_lib_path))
+      end
     end
 
     module
   end
 
   def targets do
-    run_zig("targets", [])
+    run_zig(["targets"], [])
   end
 
   def executable_path do
@@ -358,4 +356,6 @@ defmodule Zig.Command do
         :ok
     end
   end
+
+  defp sema_sidecar_path(path), do: path <> ".sema.json"
 end

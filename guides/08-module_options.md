@@ -72,8 +72,8 @@ end
 ## adding modules
 
 It's possible to add zig files as modules using the `extra_modules` keyword option. The name of the
-module is the key, and the value is a tuple of the path to the zig file that acts as the module
-and a list of transitive module dependencies. 
+module is the key, and the value is a tuple of the path to the zig file that acts as the module and
+a list of transitive module dependencies. 
 
 ### Example extra.zig
 
@@ -105,10 +105,10 @@ end
 ## Release Mode
 
 Zig has several release modes, and you can specify which release mode to build your program under
-using the `optimize` option.  This option defaults to `:debug` if you are in `:dev` or `:test`
-and `:safe` otherwise (or if the `Mix` module is not available).  You may also specify `:env` which
-reades the `ZIGLER_RELEASE_MODE` environment variable, or `{:env, default}` which lets you specify
-a different default mode if `ZIGLER_RELEASE_MODE` is not set.
+using the `optimize` option. This option defaults to `:debug` if you are in `:dev` or `:test` and
+`:safe` otherwise (or if the `Mix` module is not available). You may also specify `:env` which
+reades the `ZIGLER_RELEASE_MODE` environment variable, or `{:env, default}` which lets you specify a
+different default mode if `ZIGLER_RELEASE_MODE` is not set.
 
 ```elixir
 defmodule ReleaseMode do
@@ -131,8 +131,8 @@ end
 
 ## Error Traces
 
-By default, zigler will provide error traces in Debug and ReleaseSafe modes.  You may
-override this in ReleaseSafe by supplying the `error_tracing` option
+By default, zigler will provide error traces in Debug and ReleaseSafe modes. You may override this
+in ReleaseSafe by supplying the `error_tracing` option
 
 ```elixir
 defmodule ErrorTraces do

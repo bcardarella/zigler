@@ -54,12 +54,12 @@ defmodule Zig.CompileError do
 
   defp parse_line(error_line, absolute_path, relative_path, manifest_module) do
     absolute_path = adjust_windows_path(absolute_path)
+    nif_file = Zig.Builder.nif_file()
 
     cond do
       # if it's the first part of the error message, we must memoize the new file/line
       String.starts_with?(error_line, "#{absolute_path}:") ->
         linerest = String.trim_leading(error_line, "#{absolute_path}:")
-        {linerest, absolute_path, manifest_module}
 
         {new_file, new_line, rest} =
           do_resolution(linerest, absolute_path, manifest_module)
@@ -74,6 +74,18 @@ defmodule Zig.CompileError do
 
       String.starts_with?(error_line, "#{relative_path}:") ->
         linerest = String.trim_leading(error_line, "#{relative_path}:")
+        {new_file, new_line, rest} = do_resolution(linerest, absolute_path, manifest_module)
+
+        {[
+           new_file,
+           colonline(new_line),
+           rest
+           |> just_replace(absolute_path, relative_path, manifest_module)
+           |> remove_column()
+         ], {new_file, new_line}}
+
+      String.starts_with?(error_line, "#{nif_file}:") ->
+        linerest = String.trim_leading(error_line, "#{nif_file}:")
         {new_file, new_line, rest} = do_resolution(linerest, absolute_path, manifest_module)
 
         {[

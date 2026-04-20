@@ -26,29 +26,28 @@ defmodule ZiglerTest.Types.EnumTest do
 
     test "if you try to use something that isn't an atom or integer" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: 0 | 1 | :foo | :bar (for `EnumType`)\n     got: `\"foo\"`\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: 0 | 1 | :foo | :bar (for `nif.EnumType`)\n     got: `\"foo\"`\n",
                    fn -> untagged_swap("foo") end
     end
 
     test "if you try to use an invalid atom" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     note: not an atom value for EnumType (should be one of `[:foo, :bar]`)\n     expected: 0 | 1 | :foo | :bar (for `EnumType`)\n     got: `:zag`\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     note: not an atom value for nif.EnumType (should be one of `[:foo, :bar]`)\n     expected: 0 | 1 | :foo | :bar (for `nif.EnumType`)\n     got: `:zag`\n",
                    fn -> untagged_swap(:zag) end
     end
 
     test "if you try to use an invalid number" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     note: not an integer value for EnumType (should be one of `[0, 1]`)\n     expected: integer (for `u1`)\n     got: `42`\n     note: out of bounds (0..1)\n     expected: 0 | 1 | :foo | :bar (for `EnumType`)\n     got: `42`\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     note: not an integer value for nif.EnumType (should be one of `[0, 1]`)\n     expected: integer (for `u1`)\n     got: `42`\n     note: out of bounds (0..1)\n     expected: 0 | 1 | :foo | :bar (for `nif.EnumType`)\n     got: `42`\n",
                    fn -> untagged_swap(42) end
     end
   end
 
   describe "if you try to make" do
-    @tag :skip
     test "zero item enum, it's a compiler error" do
       assert_raise CompileError,
                    @prefix <>
-                     "zigler encountered the unusable type .Elixir.ZiglerTest.Types.ZeroItemEnum.E",
+                     "zigler encountered the unusable type nif.E",
                    fn ->
                      Code.compile_quoted(
                        quote do
@@ -67,11 +66,10 @@ defmodule ZiglerTest.Types.EnumTest do
                    end
     end
 
-    @tag :skip
     test "one item enum, it's a compiler error" do
       assert_raise CompileError,
                    @prefix <>
-                     "zigler encountered the unusable type .Elixir.ZiglerTest.Types.OneItemEnum.E",
+                     "zigler encountered the unusable type nif.E",
                    fn ->
                      Code.compile_quoted(
                        quote do

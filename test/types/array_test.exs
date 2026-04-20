@@ -182,7 +182,7 @@ defmodule ZiglerTest.Types.ArrayTest do
 
     test "basic structs can't be made from binaries" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword) (for `[3]S`)\n     got: `<<1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0>>`\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword) (for `[3]nif.S`)\n     got: `<<1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0>>`\n",
                    fn ->
                      array_of_structs(<<1::32-native, 2::32-native, 3::32-native>>)
                    end
@@ -215,7 +215,7 @@ defmodule ZiglerTest.Types.ArrayTest do
 
     test "correct error message when element binary is of the wrong size" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::96>> (for `[3]P`)\n     got: `[<<1, 0, 0, 0>>, <<2, 0, 0, 0>>, <<0, 0, 0>>]`\n     at index 2:\n     | expected: map | keyword | <<_::32>> (for `P`)\n     | got: `<<0, 0, 0>>`\n     | note: binary size 4 expected but got size 3\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::96>> (for `[3]nif.P`)\n     got: `[<<1, 0, 0, 0>>, <<2, 0, 0, 0>>, <<0, 0, 0>>]`\n     at index 2:\n     | expected: map | keyword | <<_::32>> (for `nif.P`)\n     | got: `<<0, 0, 0>>`\n     | note: binary size 4 expected but got size 3\n",
                    fn ->
                      array_of_packed_structs([<<1::32-native>>, <<2::32-native>>, <<0, 0, 0>>])
                    end
@@ -223,7 +223,7 @@ defmodule ZiglerTest.Types.ArrayTest do
 
     test "correct error message when full binary is of the wrong size" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::96>> (for `[3]P`)\n     got: `<<1, 0, 0, 0, 2, 0, 0, 0>>`\n     note: binary size 12 expected but got size 8\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::96>> (for `[3]nif.P`)\n     got: `<<1, 0, 0, 0, 2, 0, 0, 0>>`\n     note: binary size 12 expected but got size 8\n",
                    fn ->
                      array_of_packed_structs(<<1::32-native, 2::32-native>>)
                    end
@@ -256,7 +256,7 @@ defmodule ZiglerTest.Types.ArrayTest do
 
     test "correct error message for extern structs when element binary is of the wrong size" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::96>> (for `[3]E`)\n     got: `[<<1, 0, 0, 0>>, <<2, 0, 0, 0>>, <<0, 0, 0>>]`\n     at index 2:\n     | expected: map | keyword | <<_::32>> (for `E`)\n     | got: `<<0, 0, 0>>`\n     | note: binary size 4 expected but got size 3\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::96>> (for `[3]nif.E`)\n     got: `[<<1, 0, 0, 0>>, <<2, 0, 0, 0>>, <<0, 0, 0>>]`\n     at index 2:\n     | expected: map | keyword | <<_::32>> (for `nif.E`)\n     | got: `<<0, 0, 0>>`\n     | note: binary size 4 expected but got size 3\n",
                    fn ->
                      array_of_extern_structs([<<1::32-native>>, <<2::32-native>>, <<0, 0, 0>>])
                    end
@@ -264,7 +264,7 @@ defmodule ZiglerTest.Types.ArrayTest do
 
     test "correct error message for extern structs when full binary is of the wrong size" do
       assert_raise ArgumentError,
-                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::96>> (for `[3]E`)\n     got: `<<1, 0, 0, 0, 2, 0, 0, 0>>`\n     note: binary size 12 expected but got size 8\n",
+                   "errors were found at the given arguments:\n\n  * 1st argument: \n\n     expected: list(map | keyword | <<_::32>>) | <<_::96>> (for `[3]nif.E`)\n     got: `<<1, 0, 0, 0, 2, 0, 0, 0>>`\n     note: binary size 12 expected but got size 8\n",
                    fn ->
                      array_of_extern_structs(<<1::32-native, 2::32-native>>)
                    end

@@ -16,6 +16,8 @@ memory your NIF is using, and possibly gives better memory placement to avoid ca
 execution thread.
 
 ```elixir
+use Zig, otp_app: :zigler, translate_c: "stdlib.h"
+
 ~Z"""
 const beam = @import("beam");
 
@@ -64,7 +66,7 @@ pub fn zigler_free() void {
     beam.allocator.free(global_zigler);
 }
 
-const c_stdlib = @cImport(@cInclude("stdlib.h"));
+const c_stdlib = @import("c");
 
 var global_cstd: [*c]u8 = undefined;
 pub fn c_malloc() void {
@@ -144,13 +146,13 @@ pub fn leaks() !bool {
     // note that we haven't freed it yet, that happens on deferral,
     // which lands after the return call.
 
-    return beam.allocator_.debug_allocator_instance.detectLeaks();
+    return beam.allocator_.debug_allocator_instance.detectLeaks() != 0;
 }
 
 pub fn noleak() !bool {
     const memory = try beam.debug_allocator.alloc(u8, 8);
     beam.debug_allocator.free(memory);
-    return beam.allocator_.debug_allocator_instance.detectLeaks();
+    return beam.allocator_.debug_allocator_instance.detectLeaks() != 0;
 }
 """
 
